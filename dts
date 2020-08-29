@@ -1,0 +1,110 @@
+[
+    {
+        "ParameterKey": "ApplicationShortName",
+        "ParameterValue": "f4i"
+    },
+    {
+        "ParameterKey": "ClusterName",
+        "ParameterValue": "f4i-ecs-testdepov"
+    },
+    {
+        "ParameterKey": "ServiceName",
+        "ParameterValue": "testdepov-sv-{{AppVersion}}"
+    },
+    {
+        "ParameterKey": "ContainerName",
+        "ParameterValue": "testrdepov-cntr-{{AppVersion}}"
+    },
+    {
+        "ParameterKey": "ContainerImage",
+        "ParameterValue": "825597222502.dkr.ecr.us-east-1.amazonaws.com/f4i/testrdepov:{{BuildVersion}}"
+    },
+    {
+        "ParameterKey": "ContainerPort",
+        "ParameterValue": "8000"
+    },
+    {
+        "ParameterKey": "Cpu",
+        "ParameterValue": "2048"
+    },
+    {
+        "ParameterKey": "Memory",
+        "ParameterValue": "4096"
+    },
+    {
+        "ParameterKey": "Lifecycle",
+        "ParameterValue": "devl"
+    },
+    {
+        "ParameterKey": "ServiceSecurityGroupName",
+        "ParameterValue": "sg-0034c524d1bb7063d,sg-01873afc98ca1ea80"
+    },
+    {
+        "ParameterKey": "EcsServiceSubnets",
+        "ParameterValue": "subnet-08af8c2f62752872e,subnet-0586057536f3bc4c6,subnet-094b27db314a61c60,subnet-08466f069ea87dd62"
+    },
+    {
+        "ParameterKey": "TargetGroupAdd",
+        "ParameterValue": "{{AppVersion}}"
+    },
+    {
+        "ParameterKey": "TargetGroupArn",
+        "ParameterValue": "arn:aws:elasticloadbalancing:us-east-1:825597222502:targetgroup/f4i-ecs-testdepov/dedf317c6d9ecc25"
+    },
+    {
+        "ParameterKey": "TaskRoleArn",
+        "ParameterValue": "arn:aws:iam::825597222502:role/f4i-devl-csbu-comp"
+    },
+	{
+		 "ParameterKey":"AssetID",
+		 "ParameterValue": "MSR03102"
+	},
+	{
+		 "ParameterKey":"DesiredCount",
+		 "ParameterValue": "2"
+	},
+	{
+		"ParameterKey":"S3ConfigBucket",	
+		"ParameterValue": "ecos-ms-bg-us-east-1/config"
+	},
+	{
+		"ParameterKey":"NginxContainerName",	
+		"ParameterValue": "ecos-nginx"
+	},
+    {
+        "ParameterKey": "NginxContainerImage",
+        "ParameterValue": "825597222502.dkr.ecr.us-east-1.amazonaws.com/f4i/base:mwnginx2.0"
+    },
+    {
+		"ParameterKey":"NginxContainerPort",	
+		"ParameterValue": "443"
+	},
+	{
+		"ParameterKey":"NginxMemory",	
+		"ParameterValue": "2048"
+	},
+	{
+		"ParameterKey":"AwsLifeCycle",	
+		"ParameterValue": "devl-csbu"
+	},
+	{  	"ParameterKey": "VPC",
+	   	"ParameterValue": "vpc-03f4e5bacd852a1f0"
+	},
+	{  	"ParameterKey": "Path",
+		"ParameterValue": "/ecos/msa/blugrn/*" 
+	},
+	{  	"ParameterKey": "Priority" ,
+		"ParameterValue": "3" 
+	},
+	{  	"ParameterKey": "Listener",
+		"ParameterValue": "arn:aws:elasticloadbalancing:us-east-1:825597222502:listener/app/f4i-alb-ecs-testdepov/3ee995cdab5cfe26/e1e55123cb0c4d63"
+    },
+    {
+        "ParameterKey": "TargetGroupName",
+        "ParameterValue": "ecs-testdepov-drps"
+    },
+    {
+        "ParameterKey": "HealthCheckUrl",
+        "ParameterValue": "/ecos/msa/blugrn/"
+    }
+]
