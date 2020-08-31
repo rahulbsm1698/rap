@@ -1,0 +1,18 @@
+[
+    {
+        "ParameterKey": "ApplicationShortName",
+        "ParameterValue": "f4i"
+    },
+    {
+        "ParameterKey": "ClusterName",
+        "ParameterValue": "f4i-ecs-testdepov"
+    },
+    {
+        "ParameterKey": "ServiceName",
+        "ParameterValue": "testdepov-sv-{{AppVersion}}"
+    },
+	{
+		 "ParameterKey":"DesiredCount",
+		 "ParameterValue": "2"
+	}
+]
