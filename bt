@@ -34,8 +34,6 @@ Parameters:
     Type: 'List<AWS::EC2::Subnet::Id>'
   TargetGroupArn:
     Type: String
-  TargetGroupAdd:
-    Type: String
   TaskRoleArn:
     Type: String
   AssetID:
@@ -52,36 +50,9 @@ Parameters:
     Type: Number
   NginxMemory:
     Type: Number
-  AwsLifeCycle:
-    Type: String
-  Path:
-    Type: String
-    Default: "*"
-    Description: A path on the public load balancer that this service
-                 should be connected to. Use * to send all load balancer
-                 traffic to this service.
   VPC:
     Description: VPC of MF Account
     Type: AWS::EC2::VPC::Id
-  Priority:
-    Type: Number
-    Default: 2
-    Description: The priority for the routing rule added to the load balancer.
-                 This only applies if your have multiple services which have been
-                 assigned to different paths on the load balancer.
-  Listener:
-    Type: String
-    Description: HTTPS Listener
-  TargetGroupName:
-    Type: String
-    Description: Target Group Name used in the Target Group Creation
-  HealthCheckUrl:
-    Type: String
-    Description: Health Check URL used in the TargetGroup
-  LoadBalancerDeregistrationDelay:
-    Description: 'The amount time (in seconds) to wait before changing the state of a deregistering target from draining to unused.'
-    Type: Number
-    Default: 60
     
 Resources:
 
@@ -98,10 +69,6 @@ Resources:
           AssignPublicIp: DISABLED
           SecurityGroups: !Ref ServiceSecurityGroupName
           Subnets: !Ref EcsServiceSubnets
-      LoadBalancers:
-        - ContainerName: !Ref NginxContainerName
-          ContainerPort: !Ref NginxContainerPort
-          TargetGroupArn: !Ref 'TargetGroup'
       TaskDefinition: !Ref 'TaskDefinition'
 
   TaskDefinition:
@@ -164,46 +131,4 @@ Resources:
               Value: true 
           PortMappings:
             - ContainerPort: !Ref NginxContainerPort
-              Protocol: tcp
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Sub '/aws/ecs/${ClusterName}'
-              awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: !Ref NginxContainerName
-              awslogs-create-group: true       
-
-  # target group to receive all requests from the Load Balancer.
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      HealthCheckIntervalSeconds: 45
-      HealthCheckPath: !Sub '${HealthCheckUrl}'   #Need to add actuator in springboot to make this generic
-      HealthCheckProtocol: HTTPS
-      HealthCheckTimeoutSeconds: 30
-      HealthyThresholdCount: 5
-      TargetType: ip
-      Name: !Sub '${ApplicationShortName}-${TargetGroupName}'
-      Port: !Ref 'NginxContainerPort'
-      Protocol: HTTPS
-      UnhealthyThresholdCount: 2
-      VpcId: !Ref VPC
-      TargetGroupAttributes:
-      - Key: deregistration_delay.timeout_seconds
-        Value: !Ref LoadBalancerDeregistrationDelay
-
-  # Create a rule on the load balancer for routing traffic to the target group
-  LoadBalancerRule:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    DependsOn: TargetGroup
-    Properties:
-      Actions:
-        - TargetGroupArn: !Ref 'TargetGroup'
-          Type: 'forward'
-      Conditions:
-        - Field: path-pattern
-          Values: [!Ref 'Path']
-      ListenerArn: !Ref Listener
-         # Fn::ImportValue:
-           # !Join [':', [!Ref 'ParentStack', 'HttpsListener']]
-      Priority: !Ref 'Priority'
+              Protocol: tcp      
