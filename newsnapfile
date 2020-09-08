@@ -1,0 +1,217 @@
+def scm
+def appImageId
+def IMAGE_TAG
+def APP_VERSION
+def BUILD_VERSION
+def ARTIFACTORY_URL='https://artifactory.fanniemae.com'
+pipeline {
+	agent none
+	options {
+		skipDefaultCheckout()
+		preserveStashes(buildCount: 4)
+	}
+	stages {
+		stage ('Build') {
+			agent { label 'BDP' }
+			steps {
+				cleanWs()
+				script {
+				    
+				    //Configure the Bitbucket Repository URL and the respective branch
+					scm = git url: 'ssh://git@bitbucket:7999/f4i/ecos-ri-springboot-basic.git'
+					
+					//Maven Build
+					withMaven(maven: 'apache-maven-3.5.0', jdk: 'jdk1.8.0_212') {
+						sh "mvn clean install"
+					}
+					
+					if(!fileExists('target/resources/application.properties')) {
+						echo 'No Application Properties file found.'
+						APP_VERSION='v0'
+					}
+					
+					props = readProperties file: 'target/resources/application.properties'
+					APP_VERSION = props["application.version"]
+					echo APP_VERSION
+					
+					//Create the Image Version/Tag using the commit number and the build number
+					BUILD_VERSION = "${APP_VERSION}-${scm.GIT_COMMIT[0..12]}-${env.BUILD_NUMBER}"
+					currentBuild.setDisplayName("${BUILD_VERSION}")
+
+					//Replace the Image Tag in json file with the new Version
+					sh "find ./awsEnvs -name *params.json -exec sed -i 's/{{AppVersion}}/'${APP_VERSION}'/g' {} +"
+					sh "find ./awsEnvs -name *params.json -exec sed -i 's/{{BuildVersion}}/'${BUILD_VERSION}'/g' {} +"
+
+					//Zip the CFT and parameters json files
+					sh "zip -r awsEnvs.zip ./awsEnvs"
+					//Stash the required files					
+					stash includes: 'target/**/*.*', name: 'target'
+					stash includes: 'Dockerfile', name: 'Dockerfile'
+					stash includes: 'awsEnvs.zip', name: 'awsEnvs'
+					
+				}	
+			}
+		}
+
+		stage ('DockerImageCreation') {
+			agent { label 'Docker' }
+			steps {
+				cleanWs()
+				//Unstash the content i.e. stashed in the above step
+				unstash 'target'
+				unstash 'Dockerfile'
+				unstash 'awsEnvs'
+				script {
+					docker.withTool('docker-18.06.3-ce') {
+						//Provide the Artifactory URL & fqdprod is the Jenkins ID that is used to login to Artifactory
+						docker.withRegistry("${ARTIFACTORY_URL}", 'fqdprod-AD') {
+							//Build the docker image with the artifactory repo name and the latest version/tag
+							appImageId = docker.build("gbx-ecos-snapshot/ecos-sbbasic:${BUILD_VERSION}")
+							IMAGE_TAG  = appImageId.tag()
+                          
+							TWISTLOCK_OUTPUT = "prisma-cloud-scan-results-${BUILD_VERSION}.json"
+							prismaCloudScanImage ca: '', cert: '', dockerAddress: 'unix:///var/run/docker.sock', ignoreImageBuildTime: true, image: "${IMAGE_TAG}", key: '', 
+								containerized: true, logLevel: 'info', podmanPath: '', project: '', resultsFile: "${TWISTLOCK_OUTPUT}"
+
+							prismaCloudPublish resultsFilePattern: "${TWISTLOCK_OUTPUT}"
+                          
+							//Push the image to artifactory
+							appImageId.push()
+						}
+					}
+				}
+			}
+		}
+	
+		stage ('PushToUCD') { 
+			agent { label 'BDP' }
+			steps {
+				unstash 'awsEnvs'
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+				 	component: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.VersionHelper$VersionBlock',
+						componentName: 'GBX-DEPLOY-SBBASIC',
+						delivery: [
+							$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeliveryHelper$Push',
+							pushVersion: "${BUILD_VERSION}",
+							baseDir: "${env.WORKSPACE}",
+							fileIncludePatterns: '**/*.zip',
+							fileExcludePatterns: '',
+							pushProperties: "GIT_URL=${scm.GIT_URL}\nGIT_COMMIT=${scm.GIT_COMMIT}\nBUILD_URL=${env.BUILD_URL}\nDOCKER_IMAGE_URL=${env.ARTIFACTORY_URL}/${IMAGE_TAG}\n",
+							pushDescription: 'Pushed from Jenkins by' + '${env.BUILD_USER_ID}'
+						]	
+				 	]	
+				])
+			}
+		}
+		
+		stage ('DEVL-Deploy') {
+			agent { label 'BDP' }
+			steps {
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						deployApp: 'GBX-REFAPP',
+						deployEnv: 'DEVL',
+						deployProc: 'DEPLOY GBX SBBASIC',
+						skipWait: false,
+						deployReqProps: '',
+						deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+						deployOnlyChanged: false,
+					]
+				])
+			}
+		}
+		stage ('create-snapshot-Deploy') {
+			agent { label 'BDP' }
+			steps {
+                 step([$class: 'UCDeployPublisher',
+					 siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					 deploy: [ 
+						 $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						 deployApp: 'GBX-REFAPP',
+						 deployEnv: 'DEVL',
+						 deployProc: 'DEPLOY GBX SBBASIC',
+						 //createProcess: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.ProcessHelper$CreateProcessBlock', processComponent: 'Deploy' ],
+						 createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: 'TestSnapshot:1.0' ],
+						 deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+						 deployOnlyChanged: false 
+					] 
+				 ])
+			}
+		}
+		
+		stage('TEST-Deploy') {
+			agent { label 'BDP' }
+			steps {
+			  def userInput = false
+				script {
+					def userInput = input(id: 'Proceed1', message: 'Promote build?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']])
+					echo 'userInput: ' + userInput
+
+					if(userInput == true) {
+						step([$class: 'UCDeployPublisher',
+							siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+							deploy: [
+								$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+								deployApp: 'GBX-REFAPP',
+								deployEnv: 'TEST',
+								deployProc: 'DEPLOY GBX REFAPP',
+								skipWait: false,
+								deployReqProps: '',
+								deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
+								deployOnlyChanged: false,
+							]
+						])
+					} else {
+						// not do action
+						echo "Action was aborted."
+					}
+
+				}    
+			}  
+		}
+
+        /***
+		stage ('ACPT-Deploy') {
+			agent { label 'BDP' }
+			steps {
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						deployApp: 'GBX-REFAPP',
+						deployEnv: 'ACPT',
+						deployProc: 'DEPLOY GBX REFAPP',
+						skipWait: false,
+						deployReqProps: '',
+						deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
+						deployOnlyChanged: false,
+					]
+				])
+			}
+		}
+
+		stage ('ACNT-Deploy') {
+			agent { label 'BDP' }
+			steps {
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						deployApp: 'GBX-REFAPP',
+						deployEnv: 'ACNT',
+						deployProc: 'DEPLOY GBX REFAPP',
+						skipWait: false,
+						deployReqProps: '',
+						deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
+						deployOnlyChanged: false,
+					]
+				])
+			}
+		}
+		***/
+	}
+}
