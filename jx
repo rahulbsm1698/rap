@@ -4,6 +4,7 @@ def IMAGE_TAG
 def APP_VERSION
 def BUILD_VERSION
 def ARTIFACTORY_URL='https://artifactory.fanniemae.com'
+def userInput
 pipeline {
 	agent none
 	options {
@@ -69,11 +70,11 @@ pipeline {
 							appImageId = docker.build("gbx-ecos-snapshot/ecos-sbbasic:${BUILD_VERSION}")
 							IMAGE_TAG  = appImageId.tag()
                           
-							TWISTLOCK_OUTPUT = "prisma-cloud-scan-results-${BUILD_VERSION}.json"
+							/*TWISTLOCK_OUTPUT = "prisma-cloud-scan-results-${BUILD_VERSION}.json"
 							prismaCloudScanImage ca: '', cert: '', dockerAddress: 'unix:///var/run/docker.sock', ignoreImageBuildTime: true, image: "${IMAGE_TAG}", key: '', 
 								containerized: true, logLevel: 'info', podmanPath: '', project: '', resultsFile: "${TWISTLOCK_OUTPUT}"
 
-							prismaCloudPublish resultsFilePattern: "${TWISTLOCK_OUTPUT}"
+							prismaCloudPublish resultsFilePattern: "${TWISTLOCK_OUTPUT}"*/
                           
 							//Push the image to artifactory
 							appImageId.push()
@@ -124,27 +125,55 @@ pipeline {
 				])
 			}
 		}
-
-		/***
+		stage ('create-snapshot-Deploy') {
+			agent { label 'BDP' }
+			steps {
+                step([$class: 'UCDeployPublisher',
+					siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [ 
+						 $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						 deployApp: 'GBX-REFAPP',
+						 deployEnv: 'DEVL',
+						 deployProc: 'DEPLOY GBX SBBASIC',
+						 //createProcess: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.ProcessHelper$CreateProcessBlock', processComponent: 'Deploy' ],
+						 createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}", snapshotDescription: 'Test' ],
+						 deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+						 deployOnlyChanged: false 
+					] 
+				 ])
+			}
+		}
 		stage ('TEST-Deploy') {
 			agent { label 'BDP' }
 			steps {
-				step([$class: 'UCDeployPublisher',
-				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
-					deploy: [
-						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
-						deployApp: 'GBX-REFAPP',
-						deployEnv: 'TEST',
-						deployProc: 'DEPLOY GBX REFAPP',
-						skipWait: false,
-						deployReqProps: '',
-						deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
-						deployOnlyChanged: false,
-					]
-				])
-			}
-		}
+			    script {
+					userInput = input(id: 'Proceed1', message: 'Promote build?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']])
+					echo 'userInput: ' + userInput
 
+					if(userInput == true) {
+						step([$class: 'UCDeployPublisher',
+							siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+							deploy: [
+								$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+								deployApp: 'GBX-REFAPP',
+								deployEnv: 'TEST',
+								deployProc: 'DEPLOY GBX SBBASIC',
+								deploySnapshot: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+								skipWait: false,
+							    deployReqProps: '',
+								deployOnlyChanged: false,
+							]
+						])
+					} else {
+						// not do action
+						echo "Action was aborted."
+					}
+
+				}    
+			}  
+		}
+				
+        /***
 		stage ('ACPT-Deploy') {
 			agent { label 'BDP' }
 			steps {
@@ -163,7 +192,7 @@ pipeline {
 				])
 			}
 		}
-
+    
 		stage ('ACNT-Deploy') {
 			agent { label 'BDP' }
 			steps {
