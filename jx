@@ -197,19 +197,30 @@ pipeline {
 		stage ('ACPT-Deploy') {
 			agent { label 'BDP' }
 			steps {
-				step([$class: 'UCDeployPublisher',
-				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
-					deploy: [
-						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
-						deployApp: 'GBX-REFAPP',
-						deployEnv: 'ACPT',
-						deployProc: 'DEPLOY GBX REFAPP',
-						skipWait: false,
-						deployReqProps: '',
-						deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
-						deployOnlyChanged: false,
-					]
-				])
+			    inputtime()
+				script {
+					if (didTimeout) {
+							// do something on timeout
+							echo "no input was received before timeout"                    
+					} else if(userInput == true) {				
+							step([$class: 'UCDeployPublisher',
+								siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+								deploy: [
+									$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+									deployApp: 'GBX-REFAPP',
+									deployEnv: 'ACPT',
+									deployProc: 'DEPLOY GBX REFAPP',
+									skipWait: false,
+									deployReqProps: '',
+									deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
+									deployOnlyChanged: false,
+								]
+							])
+					} else {
+						// not do action
+						echo "Action was aborted."
+					}
+				}	
 			}
 		}
     
