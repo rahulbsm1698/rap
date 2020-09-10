@@ -4,7 +4,8 @@ def IMAGE_TAG
 def APP_VERSION
 def BUILD_VERSION
 def ARTIFACTORY_URL='https://artifactory.fanniemae.com'
-def userInput
+def userInput = true
+def didTimeout = false
 pipeline {
 	agent none
 	options {
@@ -107,7 +108,7 @@ pipeline {
 			}
 		}
 		
-		stage ('DEVL-Deploy') {
+		/* stage ('DEVL-Deploy') {
 			agent { label 'BDP' }
 			steps {
 				step([$class: 'UCDeployPublisher',
@@ -124,7 +125,7 @@ pipeline {
 					]
 				])
 			}
-		}
+		} */
 		stage ('create-snapshot-Deploy') {
 			agent { label 'BDP' }
 			steps {
@@ -142,15 +143,31 @@ pipeline {
 					] 
 				 ])
 			}
-		}
+		} 
 		stage ('TEST-Deploy') {
 			agent { label 'BDP' }
 			steps {
 			    script {
-					userInput = input(id: 'Proceed1', message: 'Promote build?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']])
-					echo 'userInput: ' + userInput
-
-					if(userInput == true) {
+					try {
+						timeout(time: 15, unit: 'SECONDS') { // change to a convenient timeout for you
+							userInput = input(
+							id: 'Proceed1', message: 'Proceed the Job', parameters: [
+							[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']
+							])
+						}
+					} catch(err) { // timeout reached or input false
+						def user = err.getCauses()[0].getUser()
+						if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
+							didTimeout = true
+						} else {
+							userInput = false
+							echo "Aborted by: [${user}]"
+						}
+					}
+					if (didTimeout) {
+							// do something on timeout
+							echo "no input was received before timeout"                    
+					} else if(userInput == true) {
 						step([$class: 'UCDeployPublisher',
 							siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
 							deploy: [
