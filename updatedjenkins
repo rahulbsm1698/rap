@@ -1,0 +1,204 @@
+def scm
+def appImageId
+def IMAGE_TAG
+def APP_VERSION
+def BUILD_VERSION
+def ARTIFACTORY_URL='https://artifactory.fanniemae.com'
+def userInput = true
+def didTimeout = false
+def inputtime() {
+			timeout(time: 240, unit: 'SECONDS') { // change to a convenient timeout for you
+				userInput = input(
+				id: 'Proceed1', message: 'Proceed the Job', parameters: [
+				[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']
+				])
+			}
+}
+pipeline {
+	agent none
+	options {
+		skipDefaultCheckout()
+		preserveStashes(buildCount: 4)
+	}
+	stages {
+		stage ('Build') {
+			agent { label 'BDP' }
+			steps {
+				cleanWs()
+				script {
+				    
+				    //Configure the Bitbucket Repository URL and the respective branch
+					scm = git url: 'ssh://git@bitbucket:7999/f4i/ecos-ri-springboot-basic.git'
+					
+				    def APP_VERSION = input(
+					   id: 'APP_VERSION', message: 'APP_VERSION', parameters: [
+						  [$class: 'TextParameterDefinition', description: 'v0,v1', name: 'AppVersion']
+					   ]
+				    )
+
+				  def BUILD_VERSION = input(
+					 id: 'BUILD_VERSION', message: 'BUILD_VERSION', parameters: [
+						[$class: 'TextParameterDefinition', description: 'v1-jasdn-146', name: 'BuildVersion']
+					 ]
+				  )					
+
+					//Replace the Image Tag in json file with the new Version
+					sh "find ./awsEnvs -name *params.json -exec sed -i 's/{{AppVersion}}/'${APP_VERSION}'/g' {} +"
+					sh "find ./awsEnvs -name *params.json -exec sed -i 's/{{BuildVersion}}/'${BUILD_VERSION}'/g' {} +"
+
+					//Zip the CFT and parameters json files
+					sh "zip -r awsEnvs.zip ./awsEnvs"
+					//Stash the required files					
+					#stash includes: 'target/**/*.*', name: 'target'
+					#stash includes: 'Dockerfile', name: 'Dockerfile'
+					stash includes: 'awsEnvs.zip', name: 'awsEnvs'
+					
+				}	
+			}
+		}
+	
+		stage ('PushToUCD') { 
+			agent { label 'BDP' }
+			steps {
+				unstash 'awsEnvs'
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+				 	component: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.VersionHelper$VersionBlock',
+						componentName: 'GBX-DEPLOY-SBBASIC',
+						delivery: [
+							$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeliveryHelper$Push',
+							pushVersion: "${BUILD_VERSION}-${env.BUILD_NUMBER}",
+							baseDir: "${env.WORKSPACE}",
+							fileIncludePatterns: '**/*.zip',
+							fileExcludePatterns: '',
+							pushProperties: "GIT_URL=${scm.GIT_URL}\nGIT_COMMIT=${scm.GIT_COMMIT}\nBUILD_URL=${env.BUILD_URL}\nDOCKER_IMAGE_URL=${env.ARTIFACTORY_URL}/${IMAGE_TAG}\n",
+							pushDescription: 'Pushed from Jenkins by' + '${env.BUILD_USER_ID}'
+						]	
+				 	]	
+				])
+			}
+		}
+
+		stage ('DEVL-Deploy') {
+			agent { label 'BDP' }
+			steps {
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						deployApp: 'GBX-REFAPP',
+						deployEnv: 'DEVL',
+						deployProc: 'DEPLOY GBX SBBASIC',
+						skipWait: false,
+						deployReqProps: '',
+						deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}-${env.BUILD_NUMBER}",
+						deployOnlyChanged: false,
+					]
+				])
+			}
+		} 
+        /**
+		stage ('create-snapshot-Deploy') {
+			agent { label 'BDP' }
+			steps {
+                step([$class: 'UCDeployPublisher',
+					siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [ 
+						 $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						 deployApp: 'GBX-REFAPP',
+						 deployEnv: 'TEST',
+						 deployProc: 'DEPLOY GBX SBBASIC',
+						 //createProcess: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.ProcessHelper$CreateProcessBlock', processComponent: 'Deploy' ],
+						 createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}", snapshotDescription: 'Test' ],
+						 deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}-${env.BUILD_NUMBER}",
+						 deployOnlyChanged: false 
+					] 
+				 ])
+			}
+		} 
+         **/
+		stage ('TEST-Deploy') {
+			agent { label 'BDP' }
+			steps {
+			    inputtime()
+			    script {
+					if (didTimeout) {
+							// do something on timeout
+							echo "no input was received before timeout"                    
+					} else if(userInput == true) {
+						step([$class: 'UCDeployPublisher',
+							siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+							deploy: [
+								$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+								deployApp: 'GBX-REFAPP',
+								deployEnv: 'TEST',
+								deployProc: 'DEPLOY GBX SBBASIC',
+								//createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}", snapshotDescription: 'Test' ],
+								//deploySnapshot: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+								skipWait: false,
+								deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION-${env.BUILD_NUMBER}}",
+							    //deployReqProps: "Snapshot = GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+								deployOnlyChanged: false,
+							]
+						])
+					} else {
+						// not do action
+						echo "Action was aborted."
+					}
+
+				}    
+			}  
+		}
+		/***		
+		stage ('ACPT-Deploy') {
+			agent { label 'BDP' }
+			steps {
+			    inputtime()
+				script {
+					if (didTimeout) {
+							// do something on timeout
+							echo "no input was received before timeout"                    
+					} else if(userInput == true) {				
+							step([$class: 'UCDeployPublisher',
+								siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+								deploy: [
+									$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+									deployApp: 'GBX-REFAPP',
+									deployEnv: 'ACPT',
+									deployProc: 'DEPLOY GBX REFAPP',
+									deploySnapshot: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+									skipWait: false,
+									deployReqProps: '',
+									deployOnlyChanged: false,
+								]
+							])
+					} else {
+						// not do action
+						echo "Action was aborted."
+					}
+				}	
+			}
+		}
+        /***
+		stage ('ACNT-Deploy') {
+			agent { label 'BDP' }
+			steps {
+				step([$class: 'UCDeployPublisher',
+				 	siteName: 'UC Deploy Prod (user=ftx_jenkins_prod)',
+					deploy: [
+						$class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+						deployApp: 'GBX-REFAPP',
+						deployEnv: 'ACNT',
+						deployProc: 'DEPLOY GBX REFAPP',
+						skipWait: false,
+						deployReqProps: '',
+						deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
+						deployOnlyChanged: false,
+					]
+				])
+			}
+		}
+		***/
+	}
+}
