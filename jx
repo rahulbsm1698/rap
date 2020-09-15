@@ -7,22 +7,12 @@ def ARTIFACTORY_URL='https://artifactory.fanniemae.com'
 def userInput = true
 def didTimeout = false
 def inputtime() {
-		try {
-			timeout(time: 15, unit: 'SECONDS') { // change to a convenient timeout for you
+			timeout(time: 240, unit: 'SECONDS') { // change to a convenient timeout for you
 				userInput = input(
 				id: 'Proceed1', message: 'Proceed the Job', parameters: [
 				[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']
 				])
 			}
-		} catch(err) { // timeout reached or input false
-			def user = err.getCauses()[0].getUser()
-			if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
-				didTimeout = true
-			} else {
-				userInput = false
-				echo "Aborted by: [${user}]"
-			}
-		}
 }
 pipeline {
 	agent none
@@ -125,8 +115,8 @@ pipeline {
 				])
 			}
 		}
-		
-		/* stage ('DEVL-Deploy') {
+
+		stage ('DEVL-Deploy') {
 			agent { label 'BDP' }
 			steps {
 				step([$class: 'UCDeployPublisher',
@@ -136,6 +126,7 @@ pipeline {
 						deployApp: 'GBX-REFAPP',
 						deployEnv: 'DEVL',
 						deployProc: 'DEPLOY GBX SBBASIC',
+						createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}", snapshotDescription: 'Test' ],
 						skipWait: false,
 						deployReqProps: '',
 						deployVersions: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
@@ -144,6 +135,7 @@ pipeline {
 				])
 			}
 		} 
+        /**
 		stage ('create-snapshot-Deploy') {
 			agent { label 'BDP' }
 			steps {
@@ -152,7 +144,7 @@ pipeline {
 					deploy: [ 
 						 $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
 						 deployApp: 'GBX-REFAPP',
-						 deployEnv: 'DEVL',
+						 deployEnv: 'TEST',
 						 deployProc: 'DEPLOY GBX SBBASIC',
 						 //createProcess: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.ProcessHelper$CreateProcessBlock', processComponent: 'Deploy' ],
 						 createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}", snapshotDescription: 'Test' ],
@@ -161,7 +153,8 @@ pipeline {
 					] 
 				 ])
 			}
-		} */
+		} 
+         **/
 		stage ('TEST-Deploy') {
 			agent { label 'BDP' }
 			steps {
@@ -178,9 +171,11 @@ pipeline {
 								deployApp: 'GBX-REFAPP',
 								deployEnv: 'TEST',
 								deployProc: 'DEPLOY GBX SBBASIC',
-								deploySnapshot: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+								//createSnapshot: [ $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$CreateSnapshotBlock', snapshotName: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}", snapshotDescription: 'Test' ],
+								//deploySnapshot: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
 								skipWait: false,
-							    deployReqProps: '',
+								deployVersions: "'Snapshot=' GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
+							    //deployReqProps: "Snapshot = GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
 								deployOnlyChanged: false,
 							]
 						])
@@ -192,8 +187,7 @@ pipeline {
 				}    
 			}  
 		}
-				
-        /***
+		/***		
 		stage ('ACPT-Deploy') {
 			agent { label 'BDP' }
 			steps {
@@ -210,9 +204,9 @@ pipeline {
 									deployApp: 'GBX-REFAPP',
 									deployEnv: 'ACPT',
 									deployProc: 'DEPLOY GBX REFAPP',
+									deploySnapshot: "GBX-DEPLOY-SBBASIC:${BUILD_VERSION}",
 									skipWait: false,
 									deployReqProps: '',
-									deployVersions: "GBX-REFAPP-DEPLOY:${BUILD_VERSION}",
 									deployOnlyChanged: false,
 								]
 							])
@@ -223,7 +217,7 @@ pipeline {
 				}	
 			}
 		}
-    
+        /***
 		stage ('ACNT-Deploy') {
 			agent { label 'BDP' }
 			steps {
