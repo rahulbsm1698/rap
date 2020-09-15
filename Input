@@ -1,0 +1,19 @@
+   stage ('SCM:Checkout') {
+       scmvars = git url: 'ssh://git@bitbucket:7999/f4i/ecos-ri-ecr-create-repo.git'
+   }
+
+   stage ('UserInput') {
+      def repoInput = input(
+	     id: 'repoInput', message: 'ECR Repo NAME', parameters: [
+            [$class: 'TextParameterDefinition', description: 'ECR REPO NAME', name: 'RepoName']
+         ]
+      )
+
+      def envInput = input(
+	     id: 'envInput', message: 'Deployment Environment', parameters: [
+            [$class: 'TextParameterDefinition', description: 'DEVL, TEST, ACPT, ACNT', name: 'EnvName']
+         ]
+      )
+
+      ecrrepo = repoInput?:''
+      deplenv = envInput?:''
